@@ -1,4 +1,4 @@
-name: Build SYNDICATE QUANT iOS v5.2.4 (Windows-only workflow)
+name: Build OverBet iOS v6.0.0
 
 on:
   workflow_dispatch:
@@ -38,21 +38,21 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            PRODUCT_NAME=SyndicateQuant
+            PRODUCT_NAME=OverBet
 
       - name: Validate built app bundle
         run: |
           set -euo pipefail
-          APP="build/Build/Products/Release-iphoneos/SyndicateQuant.app"
+          APP="build/Build/Products/Release-iphoneos/OverBet.app"
           test -d "$APP"
           test -f "$APP/Info.plist"
-          test -f "$APP/SyndicateQuant"
+          test -f "$APP/OverBet"
           EXEC=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
           BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
-          test "$EXEC" = "SyndicateQuant"
+          test "$EXEC" = "OverBet"
           test "$BUNDLE" = "com.syndicatequant.app"
-          test "$VERSION" = "5.2.4"
+          test "$VERSION" = "6.0.0"
           test -x "$APP/$EXEC"
           echo "Executable: $EXEC"
           echo "Bundle ID: $BUNDLE"
@@ -61,7 +61,7 @@ jobs:
       - name: Package IPA
         run: |
           set -euo pipefail
-          APP="build/Build/Products/Release-iphoneos/SyndicateQuant.app"
+          APP="build/Build/Products/Release-iphoneos/OverBet.app"
           rm -rf ipa SYNDICATE_QUANT_iOS_UNSIGNED.ipa
           mkdir -p ipa/Payload
           cp -R "$APP" ipa/Payload/
@@ -69,14 +69,14 @@ jobs:
           zip -qry ../SYNDICATE_QUANT_iOS_UNSIGNED.ipa Payload
           cd ..
           unzip -l SYNDICATE_QUANT_iOS_UNSIGNED.ipa
-          unzip -p SYNDICATE_QUANT_iOS_UNSIGNED.ipa Payload/SyndicateQuant.app/Info.plist > /tmp/ipa-info.plist
+          unzip -p SYNDICATE_QUANT_iOS_UNSIGNED.ipa Payload/OverBet.app/Info.plist > /tmp/ipa-info.plist
           /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' /tmp/ipa-info.plist
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' /tmp/ipa-info.plist
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: syndicate-quant-ios-v5.2.4-unsigned
+          name: overbet-ios-v6.0.0-unsigned
           path: SYNDICATE_QUANT_iOS_UNSIGNED.ipa
           if-no-files-found: error
 
@@ -84,6 +84,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: syndicate-quant-ios-v5.2.4-build-log
+          name: overbet-ios-v6.0.0-build-log
           path: /tmp/build-settings.txt
           if-no-files-found: warn
