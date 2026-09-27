@@ -398,6 +398,7 @@ struct QuantEngine {
     modelOutcomes: (home: Double, draw: Double, away: Double),
     modelName: String, sampleClass: SampleClass,
     homeSample: Int, awaySample: Int,
+    sampleForUncertainty: Int? = nil,
     posteriorBuckets: [PosteriorBucket],
     posteriorBucketsByMarket: [String: [PosteriorBucket]] = [:],
     calibrationByMarketOdds: [String: [CalibrationBucket]] = [:],
@@ -429,10 +430,10 @@ struct QuantEngine {
       let idx = min(9, max(0, Int(pFinal * 10.0)))
       if idx < buckets.count {
         let b = buckets[idx]
-        if b.n >= 40 {
+        if b.count >= 40 {
           let w = 0.10
-          pFinal = (1 - w) * pFinal + w * b.factHitRate
-          posteriorSource = (posteriorSource.map { $0 + " · CAL" } ?? "CAL n=\(b.n)")
+          pFinal = (1 - w) * pFinal + w * b.actual
+          posteriorSource = (posteriorSource.map { $0 + " · CAL" } ?? "CAL n=\(b.count)")
         }
       }
     }
