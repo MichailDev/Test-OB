@@ -216,7 +216,6 @@ struct BetSignal: Identifiable, Codable, Hashable {
   var dataHealthScore: Double? = nil
   var dataHealthLabel: String? = nil
 
-  // [8.2] Дата/время начала матча (из Match.start)
   var startTime: Date? = nil
 }
 
@@ -719,7 +718,6 @@ enum CorrelationBuilder {
   var movement: Double?
   var stakeMoney: Double?
 
-  // [8.2] Дата/время начала матча (опционально — безопасная миграция SwiftData)
   var matchStart: Date?
 
   init(signal: BetSignal, status: String = "OPEN") {
@@ -832,12 +830,25 @@ struct PosteriorBucket: Codable, Hashable, Identifiable {
   var factHitRate: Double
 }
 
-struct BacktestCalibrationBucket: Codable, Hashable, Identifiable {
+/// Универсальный бакет калибровки.
+/// Используется в двух ролях:
+///   • `Metrics.compute` — для UI-калибровки журнала (RootView → calibrationView)
+///   • `buildCalibrationByMarketOdds` / `decodedCalibrationByMarketOdds` — для
+///     коррекции сигналов по рынку+диапазону odds.
+/// Хранимые поля — ровно те же, что у старого `BacktestCalibrationBucket`,
+/// поэтому ранее сохранённый `calibrationByMarketOddsJSON` декодируется без миграций.
+struct CalibrationBucket: Codable, Hashable, Identifiable {
   var id: String { "\(probabilityLow)-\(probabilityHigh)" }
   var probabilityLow: Double
   var probabilityHigh: Double
   var n: Int
   var factHitRate: Double
+
+  // UI-совместимые computed-свойства (раньше были хранимыми):
+  var midpoint: Double { (probabilityLow + probabilityHigh) / 2 }
+  var predicted: Double { midpoint }
+  var actual: Double { factHitRate }
+  var count: Int { n }
 }
 
 struct AutoExcludeRule: Codable, Hashable, Identifiable {
@@ -946,9 +957,9 @@ extension BacktestSnapshot {
     guard let d = posteriorByMarketJSON else { return [:] }
     return (try? JSONDecoder().decode([String: [PosteriorBucket]].self, from: d)) ?? [:]
   }
-  func decodedCalibrationByMarketOdds() -> [String: [BacktestCalibrationBucket]] {
+  func decodedCalibrationByMarketOdds() -> [String: [CalibrationBucket]] {
     guard let d = calibrationByMarketOddsJSON else { return [:] }
-    return (try? JSONDecoder().decode([String: [BacktestCalibrationBucket]].self, from: d)) ?? [:]
+    return (try? JSONDecoder().decode([String: [CalibrationBucket]].self, from: d)) ?? [:]
   }
   func decodedModelComparison() -> [ModelComparison] {
     guard let d = modelComparisonJSON else { return [] }
@@ -1009,11 +1020,6 @@ struct JournalMetrics {
   var pending: Int { totalEntries - closedEntries }
 }
 
-struct CalibrationBucket: Identifiable {
-  let id: String; let midpoint: Double
-  let predicted: Double; let actual: Double; let count: Int
-}
-
 struct EquityPoint: Identifiable, Hashable {
   let id: String; let date: Date
   let cumulativeProfit: Double; let cumulativeStaked: Double
@@ -1029,7 +1035,6 @@ enum Metrics {
 
     var brierSum = 0.0; var logLossSum = 0.0; var brierCount = 0
     var clvSum = 0.0; var clvCount = 0
-    var bucketPredicted: [Int: Double] = [:]
     var bucketActual: [Int: Double] = [:]
     var bucketCount: [Int: Int] = [:]
 
@@ -1054,7 +1059,6 @@ enum Metrics {
         logLossSum += ll
         brierCount += 1
         let bucket = min(9, max(0, Int(p * 10.0)))
-        bucketPredicted[bucket, default: 0] += p
         bucketActual[bucket, default: 0] += actual
         bucketCount[bucket, default: 0] += 1
       }
@@ -1067,11 +1071,12 @@ enum Metrics {
     var buckets: [CalibrationBucket] = []
     for i in 0..<10 {
       guard let n = bucketCount[i], n > 0 else { continue }
-      let avgPred = (bucketPredicted[i] ?? 0) / Double(n)
       let actual = (bucketActual[i] ?? 0) / Double(n)
-      buckets.append(CalibrationBucket(id: "b\(i)",
-        midpoint: Double(i) / 10.0 + 0.05,
-        predicted: avgPred, actual: actual, count: n))
+      buckets.append(CalibrationBucket(
+        probabilityLow: Double(i) / 10.0,
+        probabilityHigh: Double(i + 1) / 10.0,
+        n: n,
+        factHitRate: actual))
     }
     m.calibration = buckets
     return m
@@ -1865,10 +1870,11 @@ final class BacktestService {
         old: posteriorByMarket[market] ?? [], delta: buckets)
     }
     snapshot.posteriorByMarketJSON = try? encoder.encode(posteriorByMarket)
+
     var calibration = snapshot.decodedCalibrationByMarketOdds()
     for (key, buckets) in Self.buildCalibrationByMarketOdds(from: delta.betRecords) {
       let old = calibration[key] ?? []
-      calibration[key] = mergeCalibration(old: old, delta: buckets)
+      calibration[key] = Self.mergeCalibration(old: old, delta: buckets)
     }
     snapshot.calibrationByMarketOddsJSON = try? encoder.encode(calibration)
 
@@ -1885,17 +1891,21 @@ final class BacktestService {
     Dictionary(grouping: bets, by: { $0.market }).mapValues { buildPosteriorBuckets(from: $0) }
   }
 
-  static func buildCalibrationByMarketOdds(from bets: [BetRecord]) -> [String: [BacktestCalibrationBucket]] {
+  static func buildCalibrationByMarketOdds(from bets: [BetRecord]) -> [String: [CalibrationBucket]] {
     let grouped = Dictionary(grouping: bets) { "\($0.market)|\(oddsBandKey($0.odds))" }
     return grouped.mapValues { rows in
-      var out: [BacktestCalibrationBucket] = []
+      var out: [CalibrationBucket] = []
       for i in 0..<10 {
         let lo = Double(i) / 10.0
         let hi = Double(i + 1) / 10.0
         let bucket = rows.filter { $0.probability >= lo && $0.probability < hi }
         let n = bucket.count
         let hit = n > 0 ? bucket.reduce(0.0) { $0 + $1.actual } / Double(n) : 0
-        out.append(BacktestCalibrationBucket(probabilityLow: lo, probabilityHigh: hi, n: n, factHitRate: hit))
+        out.append(CalibrationBucket(
+          probabilityLow: lo,
+          probabilityHigh: hi,
+          n: n,
+          factHitRate: hit))
       }
       return out
     }
@@ -1908,14 +1918,27 @@ final class BacktestService {
     return "3.00+"
   }
 
-  static func mergeCalibration(old: [BacktestCalibrationBucket], delta: [BacktestCalibrationBucket]) -> [BacktestCalibrationBucket] {
-    var out: [BacktestCalibrationBucket] = []
+  static func mergeCalibration(old: [CalibrationBucket],
+                               delta: [CalibrationBucket]) -> [CalibrationBucket] {
+    var out: [CalibrationBucket] = []
     for i in 0..<10 {
-      let a = i < old.count ? old[i] : BacktestCalibrationBucket(probabilityLow: Double(i)/10, probabilityHigh: Double(i+1)/10, n: 0, factHitRate: 0)
-      let b = i < delta.count ? delta[i] : BacktestCalibrationBucket(probabilityLow: Double(i)/10, probabilityHigh: Double(i+1)/10, n: 0, factHitRate: 0)
+      let a = i < old.count ? old[i] : CalibrationBucket(
+        probabilityLow: Double(i) / 10.0,
+        probabilityHigh: Double(i + 1) / 10.0,
+        n: 0, factHitRate: 0)
+      let b = i < delta.count ? delta[i] : CalibrationBucket(
+        probabilityLow: Double(i) / 10.0,
+        probabilityHigh: Double(i + 1) / 10.0,
+        n: 0, factHitRate: 0)
       let n = a.n + b.n
-      let hit = n > 0 ? (a.factHitRate * Double(a.n) + b.factHitRate * Double(b.n)) / Double(n) : 0
-      out.append(BacktestCalibrationBucket(probabilityLow: a.probabilityLow, probabilityHigh: a.probabilityHigh, n: n, factHitRate: hit))
+      let hit = n > 0
+        ? (a.factHitRate * Double(a.n) + b.factHitRate * Double(b.n)) / Double(n)
+        : 0
+      out.append(CalibrationBucket(
+        probabilityLow: a.probabilityLow,
+        probabilityHigh: a.probabilityHigh,
+        n: n,
+        factHitRate: hit))
     }
     return out
   }
@@ -2097,7 +2120,7 @@ final class ScanCoordinator {
     var tuningNote: String? = nil
     var cornersSignals: Int = 0
     var cardsSignals: Int = 0
-    var liveDropped: Int = 0    // [8.2] сколько live-матчей отсеяли
+    var liveDropped: Int = 0
   }
 
   func scan(settings: AppSettings? = nil,
@@ -2163,12 +2186,9 @@ final class ScanCoordinator {
       let client = SStatsClient(settings: resolvedSettings)
       let engine = QuantEngine()
 
-      // [8.2] Шаг 1 — базовый список матчей, без учёта статуса
       let base = engine.matches(from: try await client.listToday())
         .filter { !Self.isExcluded($0) }
 
-      // [8.2] Шаг 2 — оставляем только НЕ начавшиеся (status == 2, NotStarted).
-      //        Live (3/4/5) и Finished (8) отсеиваем из сигналов.
       var all = base.filter { m in
         guard let st = m.status else { return true }
         return st == 2
@@ -2331,7 +2351,7 @@ final class ScanCoordinator {
     return snap.decodedPosteriorByMarket()
   }
 
-  private static func loadCalibrationByMarketOdds() -> [String: [BacktestCalibrationBucket]] {
+  private static func loadCalibrationByMarketOdds() -> [String: [CalibrationBucket]] {
     guard let container = AppDependencies.shared.container else { return [:] }
     let context = ModelContext(container)
     let snap = BacktestService.fetchOrCreate(in: context)
