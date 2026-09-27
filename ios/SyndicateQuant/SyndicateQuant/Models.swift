@@ -1859,7 +1859,8 @@ final class BacktestService {
     }
   }
 
-  func enrichHistoricalOddsInBackground(batch: Int = Self.backgroundEnrichmentBatch) async -> Bool {
+  func enrichHistoricalOddsInBackground(batch: Int? = nil) async -> Bool {
+    let batchSize = batch ?? Self.backgroundEnrichmentBatch
     guard let container = AppDependencies.shared.container else { return false }
     let settings = AppSettings()
     guard !settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
@@ -1867,7 +1868,7 @@ final class BacktestService {
     var pendingDescriptor = FetchDescriptor<HistoricalMarketCache>(
       predicate: #Predicate { !$0.enriched },
       sortBy: [SortDescriptor(\.start, order: .forward)])
-    pendingDescriptor.fetchLimit = batch
+    pendingDescriptor.fetchLimit = batchSize
     let pending = (try? context.fetch(pendingDescriptor)) ?? []
     guard !pending.isEmpty else { return true }
     let client = SStatsClient(settings: settings)

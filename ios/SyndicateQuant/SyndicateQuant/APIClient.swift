@@ -18,7 +18,7 @@ actor ResponseCache {
     let d = base.appendingPathComponent("SStatsCache", isDirectory: true)
     try? fm.createDirectory(at: d, withIntermediateDirectories: true)
     self.dir = d
-    try? purgeExpiredOnDisk()
+    try? Self.purgeExpiredOnDisk(at: d, fileManager: fm)
   }
 
   func get(key: String) -> JSONValue? {
@@ -54,7 +54,7 @@ actor ResponseCache {
     dir.appendingPathComponent(ResponseCache.fnv1a(key) + ".json")
   }
 
-  private func purgeExpiredOnDisk() throws {
+  private nonisolated static func purgeExpiredOnDisk(at dir: URL, fileManager fm: FileManager) throws {
     let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
     for f in files {
       guard let data = try? Data(contentsOf: f),
