@@ -66,7 +66,7 @@ enum HistoricalMarketCacheDiskStore {
       create: true
     )) ?? URL(fileURLWithPath: NSTemporaryDirectory())
 
-    let directory = base.appendingPathComponent("HistoricalMarketCache", isDirectory: true)
+    var directory = base.appendingPathComponent("HistoricalMarketCache", isDirectory: true)
     try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
     var values = URLResourceValues()
     values.isExcludedFromBackup = true
