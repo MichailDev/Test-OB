@@ -1507,93 +1507,162 @@ struct AdminConsoleView: View {
 
   private var settingsView: some View {
     SwiftUI.Form {
-      Section {
-        SecureField("API key", text: $settings.apiKey)
-          .textInputAutocapitalization(.never).autocorrectionDisabled()
-      } header: {
-        Text("SStats API")
-      } footer: {
-        Text("Ключ хранится в Keychain и не попадает в репозиторий.")
-      }
-      Section("Отображение") {
-        Picker("Формат коэффициентов", selection: $settings.oddsFormatRaw) {
-          ForEach(OddsFormat.allCases) { f in Text(f.label).tag(f.rawValue) }
-        }
-        Text(settings.oddsFormat.hint).font(.caption2).foregroundStyle(.secondary)
-        Picker("Тема", selection: $settings.colorSchemeRaw) {
-          ForEach(AppColorScheme.allCases) { s in Text(s.label).tag(s.rawValue) }
-        }
-      }
-      Section {
-        Toggle("Ставки в деньгах", isOn: $settings.useMoneyStakes)
-        if settings.useMoneyStakes {
-          HStack {
-            Text("Размер банка")
-            Spacer()
-            TextField("0", value: $settings.bankroll, format: .number)
-              .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
-              .frame(width: 140).monospacedDigit()
-          }
-        }
-      } header: {
-        Text("Банк")
-      } footer: {
-        Text("Включённый режим показывает стейк в деньгах: 2% банка = 0.02 × размер банка.")
-      }
-      Section {
-        Toggle("Следить за линией", isOn: $settings.liveMonitorEnabled)
-        if settings.liveMonitorEnabled {
-          Stepper("Интервал: \(settings.liveMonitorIntervalSec) сек",
-                  value: $settings.liveMonitorIntervalSec, in: 30...300, step: 30)
-        }
-      } header: {
-        Text("Live-монитор")
-      } footer: {
-        Text("Каждый 5-й цикл — полные котировки (углы+ЖК). Остальные — только голы.")
-      }
-      Section {
-        Toggle("Сохранять движение линии до старта",
-               isOn: $settings.preMatchHistoryEnabled)
-        if settings.preMatchHistoryEnabled {
-          Stepper("Окно снимков: \(settings.preMatchCaptureWindowMin) мин",
-                  value: $settings.preMatchCaptureWindowMin,
-                  in: 15...180, step: 15)
-        }
-      } header: {
-        Text("Pre-match line history (W2b)")
-      } footer: {
-        Text("Снимки пишутся в 4 контрольных точках (T-60/30/15/5) пока активен Live-монитор.")
-      }
-      Section {
-        Toggle("Фоновое обновление", isOn: $settings.autoRefresh)
-        Stepper("Интервал: \(settings.refreshMinutes) мин",
-                value: $settings.refreshMinutes, in: 15...120, step: 15)
-      } header: {
-        Text("Автообновление")
-      } footer: {
-        Text("iOS сама решает, когда запускать фон (обычно ≥ 30 мин).")
-      }
-      Section("Параметры модели") {
-        Stepper("История: \(settings.historyMatches) матчей",
-                value: $settings.historyMatches, in: 6...20)
-        Stepper("Матчей в сканере: \(settings.scanMatches)",
-                value: $settings.scanMatches, in: 5...30)
-      }
-      Section("Уведомления") {
-        Toggle("Уведомлять при S/A BET", isOn: $settings.notifyBets)
-        Button { NotificationService.resetDedupe() } label: {
-          Label("Сбросить дубликаты", systemImage: "arrow.counterclockwise")
-        }
-      }
-      Section {
-        Text("NO DATA → NO NUMBER → NO EDGE → NO BET").bold()
-      } header: {
-        Text("Принцип")
-      }
-      Section { Color.clear.frame(height: 56).listRowBackground(Color.clear) }
+      settingsAPIKeyRow
+      settingsDisplayRow
+      settingsBankRow
+      settingsLiveMonitorRow
+      settingsPreMatchRow
+      settingsAutoRefreshRow
+      settingsModelParamsRow
+      settingsNotificationsRow
+      settingsPrincipleRow
+      settingsSpacerRow
     }
     .navigationTitle("Настройки")
     .navigationBarTitleDisplayMode(.large)
+  }
+
+  @ViewBuilder
+  private var settingsAPIKeyRow: some View {
+    Section {
+      SecureField("API key", text: $settings.apiKey)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+    } header: {
+      Text("SStats API")
+    } footer: {
+      Text("Ключ хранится в Keychain и не попадает в репозиторий.")
+    }
+  }
+
+  @ViewBuilder
+  private var settingsDisplayRow: some View {
+    Section("Отображение") {
+      Picker("Формат коэффициентов", selection: $settings.oddsFormatRaw) {
+        ForEach(OddsFormat.allCases) { f in
+          Text(f.label).tag(f.rawValue)
+        }
+      }
+      Text(settings.oddsFormat.hint)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+      Picker("Тема", selection: $settings.colorSchemeRaw) {
+        ForEach(AppColorScheme.allCases) { s in
+          Text(s.label).tag(s.rawValue)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var settingsBankRow: some View {
+    Section {
+      Toggle("Ставки в деньгах", isOn: $settings.useMoneyStakes)
+      if settings.useMoneyStakes {
+        HStack {
+          Text("Размер банка")
+          Spacer()
+          TextField("0", value: $settings.bankroll, format: .number)
+            .keyboardType(.decimalPad)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 140)
+            .monospacedDigit()
+        }
+      }
+    } header: {
+      Text("Банк")
+    } footer: {
+      Text("Включённый режим показывает стейк в деньгах: 2% банка = 0.02 × размер банка.")
+    }
+  }
+
+  @ViewBuilder
+  private var settingsLiveMonitorRow: some View {
+    Section {
+      Toggle("Следить за линией", isOn: $settings.liveMonitorEnabled)
+      if settings.liveMonitorEnabled {
+        Stepper("Интервал: \(settings.liveMonitorIntervalSec) сек",
+                value: $settings.liveMonitorIntervalSec,
+                in: 30...300, step: 30)
+      }
+    } header: {
+      Text("Live-монитор")
+    } footer: {
+      Text("Каждый 5-й цикл — полные котировки (углы+ЖК). Остальные — только голы.")
+    }
+  }
+
+  @ViewBuilder
+  private var settingsPreMatchRow: some View {
+    Section {
+      Toggle("Сохранять движение линии до старта",
+             isOn: $settings.preMatchHistoryEnabled)
+      if settings.preMatchHistoryEnabled {
+        Stepper("Окно снимков: \(settings.preMatchCaptureWindowMin) мин",
+                value: $settings.preMatchCaptureWindowMin,
+                in: 15...180, step: 15)
+      }
+    } header: {
+      Text("Pre-match line history (W2b)")
+    } footer: {
+      Text("Снимки пишутся в 4 контрольных точках (T-60/30/15/5) пока активен Live-монитор.")
+    }
+  }
+
+  @ViewBuilder
+  private var settingsAutoRefreshRow: some View {
+    Section {
+      Toggle("Фоновое обновление", isOn: $settings.autoRefresh)
+      Stepper("Интервал: \(settings.refreshMinutes) мин",
+              value: $settings.refreshMinutes,
+              in: 15...120, step: 15)
+    } header: {
+      Text("Автообновление")
+    } footer: {
+      Text("iOS сама решает, когда запускать фон (обычно ≥ 30 мин).")
+    }
+  }
+
+  @ViewBuilder
+  private var settingsModelParamsRow: some View {
+    Section("Параметры модели") {
+      Stepper("История: \(settings.historyMatches) матчей",
+              value: $settings.historyMatches,
+              in: 6...20)
+      Stepper("Матчей в сканере: \(settings.scanMatches)",
+              value: $settings.scanMatches,
+              in: 5...30)
+    }
+  }
+
+  @ViewBuilder
+  private var settingsNotificationsRow: some View {
+    Section("Уведомления") {
+      Toggle("Уведомлять при S/A BET", isOn: $settings.notifyBets)
+      Button {
+        NotificationService.resetDedupe()
+      } label: {
+        Label("Сбросить дубликаты", systemImage: "arrow.counterclockwise")
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var settingsPrincipleRow: some View {
+    Section {
+      Text("NO DATA → NO NUMBER → NO EDGE → NO BET").bold()
+    } header: {
+      Text("Принцип")
+    }
+  }
+
+  @ViewBuilder
+  private var settingsSpacerRow: some View {
+    Section {
+      Color.clear
+        .frame(height: 56)
+        .listRowBackground(Color.clear)
+    }
   }
 
   private func refresh() async {
