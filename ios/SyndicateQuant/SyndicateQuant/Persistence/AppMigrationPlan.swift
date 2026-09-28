@@ -8,6 +8,7 @@ import SwiftData
 /// V2 = 6.0.1 W2: removes HistoricalMarketCache from SwiftData and migrates it
 ///      into a dedicated disk cache under Application Support.
 /// V3 = 6.1.0 W3-W6: persists the latest daily forecast snapshot.
+/// V4 = 6.2.0 W7-W11: schema contract aligned with the app release.
 
 enum AppSchemaV0: VersionedSchema {
   static let versionIdentifier = Schema.Version(5, 6, 0)
@@ -147,12 +148,18 @@ enum AppSchemaV3: VersionedSchema {
   ]
 }
 
+enum AppSchemaV4: VersionedSchema {
+  static let versionIdentifier = Schema.Version(6, 2, 0)
+  static let models: [any PersistentModel.Type] = AppSchemaV3.models
+}
+
 enum AppMigrationPlan: SchemaMigrationPlan {
   static let schemas: [any VersionedSchema.Type] = [
     AppSchemaV0.self,
     AppSchemaV1.self,
     AppSchemaV2.self,
-    AppSchemaV3.self
+    AppSchemaV3.self,
+    AppSchemaV4.self
   ]
 
   static let stages: [MigrationStage] = [
@@ -208,6 +215,10 @@ enum AppMigrationPlan: SchemaMigrationPlan {
     .lightweight(
       fromVersion: AppSchemaV2.self,
       toVersion: AppSchemaV3.self
+    ),
+    .lightweight(
+      fromVersion: AppSchemaV3.self,
+      toVersion: AppSchemaV4.self
     )
   ]
 }

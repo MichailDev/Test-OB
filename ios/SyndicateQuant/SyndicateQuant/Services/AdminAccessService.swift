@@ -48,8 +48,13 @@ final class AdminAccessService: ObservableObject {
   var adminBaseURL: URL? {
     let raw = (Bundle.main.object(forInfoDictionaryKey: "AdminAPIBaseURL") as? String ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !raw.isEmpty else { return nil }
-    return URL(string: raw.hasSuffix("/") ? String(raw.dropLast()) : raw)
+    guard !raw.isEmpty,
+          let url = URL(string: raw.hasSuffix("/") ? String(raw.dropLast()) : raw),
+          url.scheme?.lowercased() == "https",
+          url.host != nil else {
+      return nil
+    }
+    return url
   }
 
   var isConfigured: Bool { adminBaseURL != nil }

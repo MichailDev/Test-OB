@@ -86,9 +86,11 @@ actor RateLimiter {
   }
 
   func register429(retryAfter: TimeInterval?) {
-    let cooldown = retryAfter ?? 30.0
+    let cooldown = max(1.0, retryAfter ?? 30.0)
     minInterval = min(10.0, max(minInterval, cooldown))
-    lastRequest = Date().addingTimeInterval(cooldown)
+    // Keep lastRequest at the moment of the 429. acquire() will wait minInterval
+    // once, rather than accidentally adding the cooldown twice.
+    lastRequest = Date()
     print("[RateLimit] 429; cooldown=\(cooldown)s")
   }
 

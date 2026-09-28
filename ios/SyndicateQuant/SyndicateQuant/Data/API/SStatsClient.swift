@@ -506,7 +506,7 @@ final class SStatsClient {
       await RateLimiter.shared.onSuccess()
       return try JSONValue(data: data)
     } catch let urlErr as URLError {
-      print("[SStats] URLError code=\(urlErr.code.rawValue) url=\(url.absoluteString)")
+      print("[SStats] URLError code=\(urlErr.code.rawValue)")
       let retriable: Set<URLError.Code> = [
         .networkConnectionLost, .cannotConnectToHost, .cannotFindHost,
       ]
@@ -518,7 +518,7 @@ final class SStatsClient {
       }
       throw APIError.server("Сеть: \(urlErr.code.rawValue) — \(urlErr.localizedDescription)")
     } catch {
-      print("[SStats] Error: \(error) url=\(url.absoluteString)")
+      print("[SStats] Error: \(error.localizedDescription)")
       throw error
     }
   }

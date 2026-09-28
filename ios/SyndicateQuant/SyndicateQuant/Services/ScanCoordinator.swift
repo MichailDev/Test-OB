@@ -103,16 +103,19 @@ final class ScanCoordinator {
       let repository = SStatsRepository(settings: resolvedSettings)
       let engine = QuantEngine()
 
-      let base = engine.matches(from: try await repository.loadToday(fresh: true))
-        .filter { !Self.isExcluded($0) }
+      let rawMatches = engine.matches(from: try await repository.loadToday(fresh: true))
+      let base = rawMatches.filter { !Self.isExcluded($0) }
+      summary.skippedExcluded = max(0, rawMatches.count - base.count)
 
       var all = base.filter { m in
         guard let st = m.status else { return true }
         return st == 2
       }
       summary.liveDropped = base.count - all.count
-      summary.skippedExcluded = max(0, base.count - all.count)
-      summary.notes.append("Всего матчей сегодня: \(base.count)")
+      summary.notes.append("Всего матчей сегодня: \(rawMatches.count)")
+      if summary.skippedExcluded > 0 {
+        summary.notes.append("Исключено по типу соревнования: \(summary.skippedExcluded)")
+      }
       if summary.liveDropped > 0 {
         summary.notes.append("Отсеяно начавшихся/завершённых: \(summary.liveDropped)")
       }

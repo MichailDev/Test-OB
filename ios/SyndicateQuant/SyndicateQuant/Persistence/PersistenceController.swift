@@ -7,7 +7,7 @@ final class PersistenceController {
   let container: ModelContainer
 
   private init() {
-    let schema = Schema(versionedSchema: AppSchemaV3.self)
+    let schema = Schema(versionedSchema: AppSchemaV4.self)
     let configuration = ModelConfiguration(
       schema: schema,
       isStoredInMemoryOnly: false
