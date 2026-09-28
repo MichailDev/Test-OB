@@ -1,4 +1,4 @@
-name: Build OverBet iOS v6.0.0
+name: Build OverBet iOS v6.2.0
 
 on:
   workflow_dispatch:
@@ -24,6 +24,28 @@ jobs:
           test -f ios/SyndicateQuant/SyndicateQuant/RootView.swift
           test -f ios/SyndicateQuant/SyndicateQuant/App/OverBetApp.swift
           test -f ios/SyndicateQuant/SyndicateQuant/Persistence/AppSchema.swift
+
+      - name: Validate persistence architecture
+        run: |
+          set -euo pipefail
+          SCHEMA=ios/SyndicateQuant/SyndicateQuant/Persistence/AppSchema.swift
+          MIGRATION=ios/SyndicateQuant/SyndicateQuant/Persistence/AppMigrationPlan.swift
+          CACHE=ios/SyndicateQuant/SyndicateQuant/Services/HistoricalMarketCacheService.swift
+          grep -q 'Schema.Version(6, 0, 1)' "$SCHEMA"
+          grep -q 'AppSchemaV0.self' "$MIGRATION"
+          grep -q 'AppSchemaV1.self' "$MIGRATION"
+          grep -q 'AppSchemaV2.self' "$MIGRATION"
+          grep -q '\.custom(' "$MIGRATION"
+          ! grep -q 'HistoricalMarketCache.self' "$SCHEMA"
+          ! grep -q 'import SwiftData' "$CACHE"
+          grep -q 'SBetSubscriptionProductIDs' ios/SyndicateQuant/SyndicateQuant/Info.plist
+          grep -q 'AdminAPIBaseURL' ios/SyndicateQuant/SyndicateQuant/Info.plist
+          grep -q 'StoreKit' ios/SyndicateQuant/SyndicateQuant/Services/SubscriptionService.swift
+          grep -q 'Bearer' ios/SyndicateQuant/SyndicateQuant/Services/AdminAccessService.swift
+          if grep -R -E 'sk-proj-|Bearer sk-' ios/SyndicateQuant/SyndicateQuant --include='*.swift' --include='*.plist'; then
+            echo 'Potential secret detected in app sources' >&2
+            exit 1
+          fi
 
       - name: Validate project
         run: |
@@ -60,7 +82,7 @@ jobs:
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
           test "$EXEC" = "SyndicateQuant"
           test "$BUNDLE" = "com.syndicatequant.app"
-          test "$VERSION" = "5.6.0"
+          test "$VERSION" = "6.2.0"
           test -x "$APP/$EXEC"
           echo "Executable: $EXEC"
           echo "Bundle ID: $BUNDLE"
@@ -84,7 +106,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: syndicate-quant-ios-v6.0.0-unsigned
+          name: syndicate-quant-ios-v6.2.0-unsigned
           path: SYNDICATE_QUANT_iOS_UNSIGNED.ipa
           if-no-files-found: error
 
@@ -92,6 +114,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: syndicate-quant-ios-v6.0.0-build-log
+          name: syndicate-quant-ios-v6.2.0-build-log
           path: /tmp/build-settings.txt
           if-no-files-found: warn
