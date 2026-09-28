@@ -1506,7 +1506,7 @@ struct AdminConsoleView: View {
   // MARK: - Настройки
 
   private var settingsView: some View {
-    Form {
+    SwiftUI.Form {
       Section {
         SecureField("API key", text: $settings.apiKey)
           .textInputAutocapitalization(.never).autocorrectionDisabled()
