@@ -16,6 +16,45 @@ struct MarketOOSReport: Codable, Hashable {
   var profit: Double
   var roi: Double
   var hitRate: Double
+  var avgCLV: Double
+  var positiveCLVRate: Double
+  var brier: Double
+  var logLoss: Double
+  var profitFactor: Double
+
+  enum CodingKeys: String, CodingKey {
+    case market, bets, wins, losses, pushes, staked, profit, roi, hitRate
+    case avgCLV, positiveCLVRate, brier, logLoss, profitFactor
+  }
+
+  init(market: String, bets: Int, wins: Int, losses: Int, pushes: Int,
+       staked: Double, profit: Double, roi: Double, hitRate: Double,
+       avgCLV: Double = 0, positiveCLVRate: Double = 0, brier: Double = 0,
+       logLoss: Double = 0, profitFactor: Double = 0) {
+    self.market = market; self.bets = bets; self.wins = wins; self.losses = losses
+    self.pushes = pushes; self.staked = staked; self.profit = profit
+    self.roi = roi; self.hitRate = hitRate; self.avgCLV = avgCLV
+    self.positiveCLVRate = positiveCLVRate; self.brier = brier
+    self.logLoss = logLoss; self.profitFactor = profitFactor
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    market = try c.decode(String.self, forKey: .market)
+    bets = try c.decode(Int.self, forKey: .bets)
+    wins = try c.decode(Int.self, forKey: .wins)
+    losses = try c.decode(Int.self, forKey: .losses)
+    pushes = try c.decode(Int.self, forKey: .pushes)
+    staked = try c.decode(Double.self, forKey: .staked)
+    profit = try c.decode(Double.self, forKey: .profit)
+    roi = try c.decode(Double.self, forKey: .roi)
+    hitRate = try c.decode(Double.self, forKey: .hitRate)
+    avgCLV = try c.decodeIfPresent(Double.self, forKey: .avgCLV) ?? 0
+    positiveCLVRate = try c.decodeIfPresent(Double.self, forKey: .positiveCLVRate) ?? 0
+    brier = try c.decodeIfPresent(Double.self, forKey: .brier) ?? 0
+    logLoss = try c.decodeIfPresent(Double.self, forKey: .logLoss) ?? 0
+    profitFactor = try c.decodeIfPresent(Double.self, forKey: .profitFactor) ?? 0
+  }
 }
 
 struct OOSValidationReport: Codable, Hashable {
@@ -51,14 +90,32 @@ enum OOSBuilder {
     for (mk, list) in grouped {
       var wins = 0, losses = 0, pushes = 0
       var staked = 0.0, profit = 0.0
+      var clvSum = 0.0, clvCount = 0, positiveCLV = 0
+      var brierSum = 0.0, logLossSum = 0.0, calibrationCount = 0
+      var grossWin = 0.0, grossLoss = 0.0
       for e in list {
         staked += e.stake
-        if let p = e.profit { profit += p }
+        if let p = e.profit {
+          profit += p
+          if p > 0 { grossWin += p }
+          if p < 0 { grossLoss += abs(p) }
+        }
+        if let clv = e.clv {
+          clvSum += clv; clvCount += 1
+          if clv > 0 { positiveCLV += 1 }
+        }
         switch e.result {
         case "WIN": wins += 1
         case "LOSS": losses += 1
         case "PUSH": pushes += 1
         default: break
+        }
+        if e.result == "WIN" || e.result == "LOSS" {
+          let actual = e.result == "WIN" ? 1.0 : 0.0
+          let p = min(0.999999, max(0.000001, e.probability))
+          brierSum += (p - actual) * (p - actual)
+          logLossSum += actual > 0.5 ? -log(p) : -log(1 - p)
+          calibrationCount += 1
         }
       }
       let roi = staked > 0 ? profit / staked : 0
@@ -66,7 +123,12 @@ enum OOSBuilder {
       let hitRate = dec > 0 ? Double(wins) / Double(dec) : 0
       byMarket[mk] = MarketOOSReport(
         market: mk, bets: list.count, wins: wins, losses: losses, pushes: pushes,
-        staked: staked, profit: profit, roi: roi, hitRate: hitRate)
+        staked: staked, profit: profit, roi: roi, hitRate: hitRate,
+        avgCLV: clvCount > 0 ? clvSum / Double(clvCount) : 0,
+        positiveCLVRate: clvCount > 0 ? Double(positiveCLV) / Double(clvCount) : 0,
+        brier: calibrationCount > 0 ? brierSum / Double(calibrationCount) : 0,
+        logLoss: calibrationCount > 0 ? logLossSum / Double(calibrationCount) : 0,
+        profitFactor: grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? 999 : 0))
     }
     return OOSValidationReport(
       generatedAt: Date(),

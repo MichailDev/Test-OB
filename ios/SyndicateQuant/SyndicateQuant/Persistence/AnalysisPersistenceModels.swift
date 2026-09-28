@@ -20,47 +20,6 @@ import SwiftData
   }
 }
 
-@Model final class HistoricalMarketCache {
-  @Attribute(.unique) var gameID: String
-  var numericID: Int
-  var start: Date?
-  var league: String
-  var homeID: String?
-  var awayID: String?
-  var home: String
-  var away: String
-  var oddsJSON: Data?
-  var enriched: Bool
-  var hasCorners: Bool
-  var hasCards: Bool
-  var cornersChecked: Bool
-  var cardsChecked: Bool
-  var failedAttempts: Int
-  var lastError: String?
-  var updatedAt: Date
-
-  init(gameID: String, numericID: Int, start: Date?, league: String,
-       homeID: String?, awayID: String?, home: String, away: String) {
-    self.gameID = gameID
-    self.numericID = numericID
-    self.start = start
-    self.league = league
-    self.homeID = homeID
-    self.awayID = awayID
-    self.home = home
-    self.away = away
-    self.oddsJSON = nil
-    self.enriched = false
-    self.hasCorners = false
-    self.hasCards = false
-    self.cornersChecked = false
-    self.cardsChecked = false
-    self.failedAttempts = 0
-    self.lastError = nil
-    self.updatedAt = Date()
-  }
-}
-
 @Model final class LineSnapshot {
   @Attribute(.unique) var id: String
   var gameID: String
@@ -202,5 +161,34 @@ import SwiftData
     self.kind = kind; self.target = target
     self.beforeValue = beforeValue; self.afterValue = afterValue
     self.note = note; self.rolledBack = rolledBack
+  }
+}
+
+@Model final class ForecastSnapshot {
+  @Attribute(.unique) var id: String
+  var forecastDate: Date
+  var generatedAt: Date
+  var sourceVersion: String
+  var success: Bool
+  var scannedMatches: Int
+  var signalCount: Int
+  var freeSignalsJSON: Data?
+  var premiumSignalsJSON: Data?
+  var notesJSON: Data?
+
+  init(id: String, forecastDate: Date, generatedAt: Date = Date(),
+       sourceVersion: String, success: Bool, scannedMatches: Int,
+       signalCount: Int, freeSignalsJSON: Data? = nil,
+       premiumSignalsJSON: Data? = nil, notesJSON: Data? = nil) {
+    self.id = id
+    self.forecastDate = forecastDate
+    self.generatedAt = generatedAt
+    self.sourceVersion = sourceVersion
+    self.success = success
+    self.scannedMatches = scannedMatches
+    self.signalCount = signalCount
+    self.freeSignalsJSON = freeSignalsJSON
+    self.premiumSignalsJSON = premiumSignalsJSON
+    self.notesJSON = notesJSON
   }
 }

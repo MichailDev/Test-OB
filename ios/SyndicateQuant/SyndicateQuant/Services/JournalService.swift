@@ -49,6 +49,12 @@ enum JournalService {
       entry.status = "CLOSED"
       closed += 1
 
+      if entry.result == "WIN" || entry.result == "LOSS" {
+        upsertCalibrationSample(
+          context: context, entry: entry,
+          actual: entry.result == "WIN" ? 1.0 : 0.0)
+      }
+
       if entry.market == "1X2" || entry.market == "GOALS" {
         if let hFT = number(game, ["homeFTResult", "homeResult"]),
            let aFT = number(game, ["awayFTResult", "awayResult"]) {
@@ -65,6 +71,25 @@ enum JournalService {
     }
     try? context.save()
     return (closed, failed)
+  }
+
+  private static func upsertCalibrationSample(
+    context: ModelContext, entry: JournalEntry, actual: Double
+  ) {
+    let id = "journal|\(entry.id)"
+    let descriptor = FetchDescriptor<CalibrationSample>(
+      predicate: #Predicate { $0.id == id })
+    if let existing = try? context.fetch(descriptor).first {
+      existing.predicted = entry.probability
+      existing.actual = actual
+      existing.market = entry.market
+      existing.createdAt = entry.matchStart ?? entry.createdAt
+      return
+    }
+    context.insert(CalibrationSample(
+      id: id, predicted: min(0.999, max(0.001, entry.probability)),
+      actual: actual, market: entry.market,
+      createdAt: entry.matchStart ?? entry.createdAt))
   }
 
   private static func resolveResult(entry: JournalEntry,
@@ -168,10 +193,15 @@ enum JournalService {
     case "CARDS":   marketId = MarketID.totalCards
     default: return nil
     }
-    return SStatsClient.bestPrice(marketId: marketId,
-                                  selection: entry.selection,
-                                  line: entry.line,
-                                  across: books)?.value
+    if entry.market == "CORNERS" {
+      return SStatsClient.sharpPrice(
+        marketId: marketId, selection: entry.selection,
+        line: entry.line, bookmakerId: SStatsClient.pinnacleBookmakerId,
+        across: books)?.value
+    }
+    return SStatsClient.bestPrice(
+      marketId: marketId, selection: entry.selection,
+      line: entry.line, across: books)?.value
   }
 
   private static func normalizeMarketByIDAndName(_ id: Int?, _ name: String) -> String {

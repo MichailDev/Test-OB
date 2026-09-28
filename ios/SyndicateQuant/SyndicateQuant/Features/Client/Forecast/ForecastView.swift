@@ -56,7 +56,7 @@ struct ForecastView: View {
             }
           } else {
             NavigationLink {
-              SignalDetailView(signal: signal).onAppear { addToJournal(signal) }
+              SignalDetailView(signal: signal)
             } label: {
               SignalCard(signal: signal, oddsFormat: settings.oddsFormat)
             }
@@ -68,7 +68,23 @@ struct ForecastView: View {
     .navigationTitle("Прогноз")
     .navigationBarTitleDisplayMode(.large)
     .refreshable { await refresh() }
-    .task { await refresh() }
+    .task {
+      await loadSnapshotOrRefresh()
+    }
+  }
+
+  private func loadSnapshotOrRefresh() async {
+    if let snapshot = ScanCoordinator.loadTodaySnapshot(context: context),
+       snapshot.success,
+       snapshot.generatedAt.timeIntervalSinceNow > -2 * 3600,
+       let decoded = decodeSignals(from: snapshot) {
+      signals = decoded
+      status = "Сегодня · обновлено в \(snapshot.generatedAt.formatted(date: .omitted, time: .shortened))"
+      saveSignalsToJournal(decoded)
+      if !subscription.isSubscribed { await subscription.refreshEntitlement() }
+      return
+    }
+    await refresh()
   }
 
   private func refresh() async {
@@ -77,15 +93,32 @@ struct ForecastView: View {
     defer { busy = false }
     let summary = await ScanCoordinator.shared.scan(settings: settings, selectedLeague: "Все")
     signals = summary.signals
+    saveSignalsToJournal(summary.signals)
     status = summary.success ? "Обновлено · \(signals.count) сигналов" : (summary.notes.first ?? "Ошибка")
     if !subscription.isSubscribed { await subscription.refreshEntitlement() }
   }
 
-  private func addToJournal(_ signal: BetSignal) {
-    let d = FetchDescriptor<JournalEntry>(predicate: #Predicate { $0.id == signal.id })
-    if (try? context.fetch(d).first) == nil {
-      context.insert(JournalEntry(signal: signal))
-      try? context.save()
+  private func saveSignalsToJournal(_ signals: [BetSignal]) {
+    guard !signals.isEmpty else { return }
+    for signal in signals {
+      let d = FetchDescriptor<JournalEntry>(predicate: #Predicate { $0.id == signal.id })
+      if (try? context.fetch(d).first) == nil {
+        context.insert(JournalEntry(signal: signal))
+      }
     }
+    try? context.save()
+  }
+
+  private func decodeSignals(from snapshot: ForecastSnapshot) -> [BetSignal]? {
+    let decoder = JSONDecoder()
+    let free = snapshot.freeSignalsJSON.flatMap { try? decoder.decode([BetSignal].self, from: $0) } ?? []
+    let premium = snapshot.premiumSignalsJSON.flatMap { try? decoder.decode([BetSignal].self, from: $0) } ?? []
+    let all = (free + premium).sorted {
+      if $0.classification != $1.classification {
+        return $0.classification == BetTier.premium.rawValue
+      }
+      return $0.qcs > $1.qcs
+    }
+    return all
   }
 }

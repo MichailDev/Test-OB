@@ -16,6 +16,14 @@ final class KeychainStore {
     SecItemAdd(query as CFDictionary, nil)
   }
 
+  func delete(_ key: String) {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrAccount as String: key,
+    ]
+    SecItemDelete(query as CFDictionary)
+  }
+
   func get(_ key: String) -> String? {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,

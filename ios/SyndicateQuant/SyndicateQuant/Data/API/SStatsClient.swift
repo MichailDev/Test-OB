@@ -58,6 +58,105 @@ enum OddsQuery {
   }
 }
 
+struct SettlementBundle {
+  let data: [String: JSONValue]
+  let game: [String: JSONValue]
+  let statistics: [String: JSONValue]
+  let fullOdds: [BookmakerOdds]
+}
+
+struct MatchAnalysisBundle {
+  let match: Match
+  let info: JSONValue
+  let oddsFromInfo: JSONValue
+  let fullOdds: [BookmakerOdds]
+  let homeHistory: [TeamRecord]
+  let awayHistory: [TeamRecord]
+  let h2hRecords: [TeamRecord]
+  let glicko: JSONValue?
+
+  var hasCornersOdds: Bool {
+    fullOdds.contains { book in
+      book.odds.contains { $0.marketId == MarketID.totalCorners }
+    }
+  }
+
+  var hasCardsOdds: Bool {
+    fullOdds.contains { book in
+      book.odds.contains { $0.marketId == MarketID.totalCards }
+    }
+  }
+}
+
+@MainActor
+final class SStatsRepository {
+  private let client: SStatsClient
+
+  init(settings: AppSettings) {
+    client = SStatsClient(settings: settings)
+  }
+
+  func loadToday(fresh: Bool = true) async throws -> JSONValue {
+    try await client.listToday(fresh: fresh)
+  }
+
+  func loadAnalysisBundle(
+    for match: Match,
+    historyCount: Int,
+    includeH2H: Bool,
+    includeGlicko: Bool = true
+  ) async -> MatchAnalysisBundle? {
+    guard let homeID = match.homeID, let awayID = match.awayID else { return nil }
+
+    guard let info = try? await client.gameInfo(match.id, fresh: true) else {
+      return nil
+    }
+
+    let data = info.object?["data"]?.object ?? info.object ?? [:]
+    let game = data["game"]?.object ?? data
+    let oddsFromInfo = game["odds"] ?? data["odds"] ?? match.oddsJSON ?? .array([])
+
+    var books: [BookmakerOdds] = []
+    if let numericID = match.numericID {
+      books = (try? await client.fullOdds(gameId: numericID, fresh: true)) ?? []
+    }
+
+    let homeHistory = await client.fetchTeamHistory(
+      teamID: homeID, count: max(1, historyCount))
+    let awayHistory = await client.fetchTeamHistory(
+      teamID: awayID, count: max(1, historyCount))
+
+    var h2h: [TeamRecord] = []
+    if includeH2H, (!books.isEmpty),
+       books.contains(where: { book in
+         book.odds.contains { $0.marketId == MarketID.totalCorners || $0.marketId == MarketID.totalCards }
+       }) {
+      h2h = await client.fetchH2H(
+        homeID: homeID, awayID: awayID,
+        homeName: match.home, awayName: match.away, count: 3)
+    }
+
+    let glicko = includeGlicko ? (try? await client.glicko(match.id)) : nil
+    return MatchAnalysisBundle(
+      match: match, info: info, oddsFromInfo: oddsFromInfo, fullOdds: books,
+      homeHistory: homeHistory, awayHistory: awayHistory,
+      h2hRecords: h2h, glicko: glicko)
+  }
+
+  func loadSettlement(for entry: JournalEntry) async -> SettlementBundle? {
+    guard let info = try? await client.gameInfo(entry.gameID, fresh: true) else { return nil }
+    let data = info.object?["data"]?.object ?? info.object ?? [:]
+    let game = data["game"]?.object ?? data
+    let statistics = data["statistics"]?.object ?? game["statistics"]?.object ?? [:]
+    var books: [BookmakerOdds] = []
+    if let numericID = Int(entry.gameID),
+       (entry.market == "CORNERS" || entry.market == "CARDS") {
+      books = (try? await client.fullOdds(gameId: numericID, fresh: true)) ?? []
+    }
+    return SettlementBundle(data: data, game: game, statistics: statistics, fullOdds: books)
+  }
+}
+
 final class SStatsClient {
   private let baseURL: String
   private let apiKey: String
@@ -74,7 +173,7 @@ final class SStatsClient {
     cfg.waitsForConnectivity = false
     cfg.httpAdditionalHeaders = [
       "Accept": "application/json",
-      "User-Agent": "SyndicateQuant-iOS/6.0.0 (iPhone; iOS)",
+      "User-Agent": "SyndicateQuant-iOS/6.2.0 (iPhone; iOS)",
       "Accept-Language": "en-US,en;q=0.9",
     ]
     self.session = URLSession(configuration: cfg)

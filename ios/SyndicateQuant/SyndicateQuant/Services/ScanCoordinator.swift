@@ -100,10 +100,10 @@ final class ScanCoordinator {
     if !thresholds.cardsEnabled { summary.notes.append("Self-Tuning: рынок CARDS выключен") }
 
     do {
-      let client = SStatsClient(settings: resolvedSettings)
+      let repository = SStatsRepository(settings: resolvedSettings)
       let engine = QuantEngine()
 
-      let base = engine.matches(from: try await client.listToday(fresh: true))
+      let base = engine.matches(from: try await repository.loadToday(fresh: true))
         .filter { !Self.isExcluded($0) }
 
       var all = base.filter { m in
@@ -153,37 +153,23 @@ final class ScanCoordinator {
       for match in matches {
         guard let h = match.homeID, let a = match.awayID else { continue }
         count += 1
-        let hs = await client.fetchTeamHistory(
-          teamID: h, count: resolvedSettings.historyMatches)
-        let awayRecords = await client.fetchTeamHistory(
-          teamID: a, count: resolvedSettings.historyMatches)
-        guard let info = try? await client.gameInfo(match.id, fresh: true) else { continue }
 
-        let data = info.object?["data"]?.object ?? info.object ?? [:]
-        let game = data["game"]?.object ?? data
-        let oddsFromInfo = game["odds"] ?? data["odds"]
-          ?? match.oddsJSON ?? .array([])
-
-        var fullBooks: [BookmakerOdds] = []
-        if let nid = match.numericID {
-          fullBooks = (try? await client.fullOdds(gameId: nid, fresh: true)) ?? []
+        guard let bundle = await repository.loadAnalysisBundle(
+          for: match,
+          historyCount: resolvedSettings.historyMatches,
+          includeH2H: thresholds.cornersEnabled || thresholds.cardsEnabled,
+          includeGlicko: true) else {
+          continue
         }
 
-        var h2hRecords: [TeamRecord] = []
-        let hasCornersOrCards = fullBooks.contains { book in
-          book.odds.contains { m in
-            m.marketId == MarketID.totalCorners || m.marketId == MarketID.totalCards
-          }
-        }
-        if hasCornersOrCards && (thresholds.cornersEnabled || thresholds.cardsEnabled) {
-          h2hRecords = await client.fetchH2H(
-            homeID: h, awayID: a,
-            homeName: match.home, awayName: match.away,
-            count: 3)
-          if !h2hRecords.isEmpty { h2hFetched += 1 }
-        }
-
-        let glicko = try? await client.glicko(match.id)
+        let hs = bundle.homeHistory
+        let awayRecords = bundle.awayHistory
+        let info = bundle.info
+        let oddsFromInfo = bundle.oddsFromInfo
+        let fullBooks = bundle.fullOdds
+        let h2hRecords = bundle.h2hRecords
+        if !h2hRecords.isEmpty { h2hFetched += 1 }
+        let glicko = bundle.glicko
 
         let ratings: (Double?, Double?) = {
           guard tuning.teamRatingEnabled, let ctx = ratingContext else { return (nil, nil) }
@@ -261,6 +247,10 @@ final class ScanCoordinator {
         correlationMatrix: tuning.correlationEnabled ? corrMatrix : nil,
         bankroll: resolvedSettings.effectiveBankroll,
         thresholds: thresholds)
+        .filter {
+          $0.classification == BetTier.free.rawValue
+            || $0.classification == BetTier.premium.rawValue
+        }
       summary.finishedAt = Date()
       summary.success = true
 
@@ -268,6 +258,8 @@ final class ScanCoordinator {
       let cardsInPort = summary.signals.filter { $0.market == "CARDS" }.count
       summary.notes.append("Сырых сигналов: \(signalsOut.count), в портфель: \(summary.signals.count)")
       summary.notes.append("Углы: \(cornersCount) сырых, \(cornersInPort) в портфель · ЖК: \(cardsCount) сырых, \(cardsInPort) в портфель")
+      Self.saveForecastSnapshot(
+        summary: summary, sourceVersion: resolvedSettings.engineVersion)
 
       if resolvedSettings.notifyBets && !summary.signals.isEmpty {
         await NotificationService.notify(signals: summary.signals)
@@ -282,6 +274,55 @@ final class ScanCoordinator {
   func scanInBackground() async -> Bool {
     let result = await scan(settings: nil)
     return result.success
+  }
+
+  private static func forecastDayKey(for date: Date = Date()) -> String {
+    let cal = Calendar(identifier: .gregorian)
+    let comps = cal.dateComponents([.year, .month, .day], from: date)
+    return String(format: "%04d-%02d-%02d", comps.year ?? 0, comps.month ?? 0, comps.day ?? 0)
+  }
+
+  static func loadTodaySnapshot(context: ModelContext) -> ForecastSnapshot? {
+    let key = forecastDayKey()
+    let d = FetchDescriptor<ForecastSnapshot>(
+      predicate: #Predicate { $0.id == key })
+    return try? context.fetch(d).first
+  }
+
+  private static func saveForecastSnapshot(summary: ScanSummary, sourceVersion: String) {
+    guard let container = AppDependencies.shared.container else { return }
+    let context = ModelContext(container)
+    let key = forecastDayKey()
+    let free = summary.signals.filter { $0.classification == BetTier.free.rawValue }
+    let premium = summary.signals.filter { $0.classification == BetTier.premium.rawValue }
+    let encoder = JSONEncoder()
+    let freeJSON = try? encoder.encode(free)
+    let premiumJSON = try? encoder.encode(premium)
+    let notesJSON = try? encoder.encode(summary.notes)
+    let row = (try? context.fetch(
+      FetchDescriptor<ForecastSnapshot>(predicate: #Predicate { $0.id == key })
+    ).first)
+    if let row {
+      row.forecastDate = Date()
+      row.generatedAt = summary.finishedAt ?? Date()
+      row.sourceVersion = sourceVersion
+      row.success = summary.success
+      row.scannedMatches = summary.scannedMatches
+      row.signalCount = summary.signals.count
+      row.freeSignalsJSON = freeJSON
+      row.premiumSignalsJSON = premiumJSON
+      row.notesJSON = notesJSON
+    } else {
+      context.insert(ForecastSnapshot(
+        id: key, forecastDate: Date(),
+        generatedAt: summary.finishedAt ?? Date(),
+        sourceVersion: sourceVersion, success: summary.success,
+        scannedMatches: summary.scannedMatches,
+        signalCount: summary.signals.count,
+        freeSignalsJSON: freeJSON, premiumSignalsJSON: premiumJSON,
+        notesJSON: notesJSON))
+    }
+    try? context.save()
   }
 
   private static func loadExcludedRules(minROI: Double, minBets: Int) -> [AutoExcludeRule] {

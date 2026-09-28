@@ -5,6 +5,7 @@ import Charts
 
 struct AdminConsoleView: View {
   @EnvironmentObject var settings: AppSettings
+  @EnvironmentObject var adminAccess: AdminAccessService
   @ObservedObject private var liveMonitor = LiveMonitor.shared
   @Environment(\.modelContext) private var context
   @Query(sort: \JournalEntry.createdAt, order: .reverse) private var journal: [JournalEntry]
@@ -25,7 +26,6 @@ struct AdminConsoleView: View {
   @State private var lastSettleStatus: String = "—"
   @State private var btProgressText = ""
   @State private var selectedTab: Int = 0
-  @State private var pendingSignalID: String?
   @State private var selfTestResults: [QuantMathSelfTest.Check] = []
 
   private var currentSnapshot: BacktestSnapshot? { snapshots.first }
@@ -35,17 +35,36 @@ struct AdminConsoleView: View {
   }
 
   var body: some View {
-    TabView(selection: $selectedTab) {
-      NavigationStack { autoView }
-        .tabItem { Label("Анализ", systemImage: "function") }.tag(0)
-      NavigationStack { diagnosticsView }
-        .tabItem { Label("Контроль", systemImage: "checkmark.shield") }.tag(1)
-      NavigationStack { settingsView }
-        .tabItem { Label("Настройки", systemImage: "gearshape") }.tag(2)
+    Group {
+      if adminAccess.isAuthorized {
+        TabView(selection: $selectedTab) {
+          NavigationStack { autoView }
+            .tabItem { Label("Model Lab", systemImage: "function") }.tag(0)
+          NavigationStack { diagnosticsView }
+            .tabItem { Label("Data Health", systemImage: "checkmark.shield") }.tag(1)
+          NavigationStack { settingsView }
+            .tabItem { Label("Controls", systemImage: "slider.horizontal.3") }.tag(2)
+        }
+      } else {
+        ContentUnavailableView(
+          "Admin закрыт",
+          systemImage: "lock.shield",
+          description: Text("Доступ выдаётся только сервером после проверки роли admin.")
+        )
+        .overlay(alignment: .bottom) {
+          Button("Проверить доступ") {
+            Task { await adminAccess.refreshAuthorization() }
+          }
+          .buttonStyle(.borderedProminent)
+          .padding(.bottom, 24)
+        }
+      }
     }
     .tint(.blue)
     .preferredColorScheme(settings.colorScheme.toColorScheme)
     .task {
+      await adminAccess.refreshAuthorization()
+      guard adminAccess.isAuthorized else { return }
       _ = BacktestService.fetchOrCreate(in: context)
       _ = TuningService.fetchOrCreate(in: context)
       if currentSnapshot?.buildStatus == "building",
@@ -53,105 +72,6 @@ struct AdminConsoleView: View {
         await runFullBuild()
       }
     }
-  }
-
-  // MARK: - Прогноз
-
-  private var forecast: some View {
-    List {
-      Section {
-        HStack {
-          Text(status).font(.subheadline)
-            .fixedSize(horizontal: false, vertical: true)
-          Spacer(minLength: 8)
-          if busy { ProgressView().scaleEffect(0.9) }
-        }
-        Picker("Лига", selection: $selectedLeague) {
-          Text("Все").tag("Все")
-          ForEach(LeaguePool.pool, id: \.name) { lg in Text(lg.name).tag(lg.name) }
-        }
-        .pickerStyle(.menu)
-        Button { Task { await refresh() } } label: {
-          Label("Обновить", systemImage: "arrow.clockwise")
-        }
-        .disabled(busy)
-      } footer: {
-        Text("Скан проверяет матчи выбранной лиги по 3 рынкам: тоталы голов, углы Pinnacle, карточки best available. Сигналы автоматически уходят в Журнал при открытии карточки.")
-      }
-
-      if signals.isEmpty {
-        Section {
-          ContentUnavailableView("Нет подтверждённых ставок",
-            systemImage: "checkmark.shield",
-            description: Text("NO DATA → NO NUMBER → NO EDGE → NO BET"))
-        }
-      }
-
-      ForEach(signals) { s in
-        Section {
-          NavigationLink {
-            SignalDetailView(signal: s).onAppear { autoJournal(s) }
-          } label: {
-            SignalCard(signal: s, oddsFormat: settings.oddsFormat)
-          }
-        }
-      }
-
-      Section { Color.clear.frame(height: 56).listRowBackground(Color.clear) }
-    }
-    .listStyle(.insetGrouped)
-    .contentMargins(.top, 4, for: .scrollContent)
-    .navigationTitle("OVERBET")
-    .navigationBarTitleDisplayMode(.large)
-    .refreshable { await refresh() }
-  }
-
-  private func autoJournal(_ s: BetSignal) {
-    if !journal.contains(where: { $0.id == s.id }) {
-      context.insert(JournalEntry(signal: s))
-      try? context.save()
-    }
-  }
-
-  // MARK: - Журнал
-
-  private var journalView: some View {
-    List {
-      Section {
-        Button { Task { await settleJournal() } } label: {
-          Label("Обновить результаты", systemImage: "checkmark.circle")
-        }
-        .disabled(busy)
-        Text(lastSettleStatus).font(.caption).foregroundStyle(.secondary)
-      } header: {
-        Text("Settlement")
-      } footer: {
-        Text("Запрашивает /Games/{id} по каждой открытой записи, определяет WIN/LOSS/PUSH, считает профит и CLV (Closing Line Value — насколько ваш коэффициент лучше закрывающего).")
-      }
-
-      if journal.isEmpty {
-        Section { ContentUnavailableView("Журнал пуст", systemImage: "tray") }
-      } else {
-        Section("Статистика") { journalStatsView() }
-        clvFirstSection
-        equitySection
-        Section("Калибровка") { calibrationView() }
-        Section("Записи") {
-          ForEach(journal) { e in
-            NavigationLink { JournalEntryDetailView(entry: e) } label: { journalRow(e) }
-              .swipeActions(edge: .trailing) {
-                Button(role: .destructive) {
-                  context.delete(e); try? context.save()
-                } label: { Label("Удалить", systemImage: "trash") }
-              }
-          }
-        }
-      }
-      Section { Color.clear.frame(height: 56).listRowBackground(Color.clear) }
-    }
-    .listStyle(.insetGrouped)
-    .navigationTitle("Журнал")
-    .navigationBarTitleDisplayMode(.large)
   }
 
   // MARK: - CLV-first
@@ -731,9 +651,14 @@ struct AdminConsoleView: View {
             HStack {
               Text(mk).font(.subheadline)
               Spacer()
-              Text(String(format: "%+.1f%% · n=%d", r.roi * 100, r.bets))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(r.roi >= 0 ? .green : .red)
+              VStack(alignment: .trailing, spacing: 2) {
+                Text(String(format: "%+.1f%% · n=%d", r.roi * 100, r.bets))
+                  .font(.caption.monospacedDigit())
+                  .foregroundStyle(r.roi >= 0 ? .green : .red)
+                Text(String(format: "CLV %+.2f%% · Brier %.3f", r.avgCLV * 100, r.brier))
+                  .font(.caption2.monospacedDigit())
+                  .foregroundStyle(.secondary)
+              }
             }
           }
         }

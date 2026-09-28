@@ -120,6 +120,18 @@ struct CalibrationBucket: Identifiable {
   let predicted: Double; let actual: Double; let count: Int
 }
 
+
+struct CalibrationSummary: Codable, Hashable {
+  var samples: Int
+  var brier: Double
+  var logLoss: Double
+  var calibrationError: Double
+  var bias: Double
+
+  static let empty = CalibrationSummary(
+    samples: 0, brier: 0, logLoss: 0, calibrationError: 0, bias: 0)
+}
+
 struct MarketCLV: Codable, Hashable {
   var count: Int
   var avgCLV: Double
@@ -362,6 +374,41 @@ enum Metrics {
         isBreakout: breakout))
     }
     return out
+  }
+
+  static func calibrationSummary(_ samples: [CalibrationSample]) -> CalibrationSummary {
+    guard !samples.isEmpty else { return .empty }
+    let bounded = samples.map { CalibrationSampleView(
+      predicted: min(0.999999, max(0.000001, $0.predicted)), actual: $0.actual) }
+    let brier = bounded.reduce(0.0) { $0 + ($1.predicted - $1.actual) * ($1.predicted - $1.actual) }
+      / Double(bounded.count)
+    let logLoss = bounded.reduce(0.0) { sum, x in
+      sum + (x.actual > 0.5 ? -log(x.predicted) : -log(1 - x.predicted))
+    } / Double(bounded.count)
+    var bins: [Int: (sumP: Double, sumY: Double, n: Int)] = [:]
+    for x in bounded {
+      let bin = min(9, max(0, Int(x.predicted * 10)))
+      var b = bins[bin] ?? (0, 0, 0)
+      b.sumP += x.predicted; b.sumY += x.actual; b.n += 1
+      bins[bin] = b
+    }
+    var calErr = 0.0
+    var bias = 0.0
+    for b in bins.values {
+      let p = b.sumP / Double(b.n)
+      let y = b.sumY / Double(b.n)
+      calErr += abs(p - y) * Double(b.n)
+      bias += (p - y) * Double(b.n)
+    }
+    let n = Double(bounded.count)
+    return CalibrationSummary(
+      samples: bounded.count, brier: brier, logLoss: logLoss,
+      calibrationError: calErr / n, bias: bias / n)
+  }
+
+  private struct CalibrationSampleView {
+    let predicted: Double
+    let actual: Double
   }
 
   static func clvReport(_ entries: [JournalEntry]) -> CLVReport {

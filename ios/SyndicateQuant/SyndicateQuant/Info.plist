@@ -42,6 +42,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>SBetSubscriptionProductIDs</key>
+	<array/>
+	<key>AdminAPIBaseURL</key>
+	<string></string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
@@ -50,6 +54,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.syndicatequant.app.refresh</string>
+		<string>com.syndicatequant.app.forecast</string>
 		<string>com.syndicatequant.app.processing</string>
 		<string>com.syndicatequant.app.enrich</string>
 	</array>

@@ -54,6 +54,7 @@ struct MatchModel {
   var lh: Double; var la: Double
   var baseLH: Double; var baseLA: Double
   var baseMatrix: Matrix2D; var playerMatrix: Matrix2D; var matrix: Matrix2D
+  var dcMatrix: Matrix2D; var bivMatrix: Matrix2D; var nbMatrix: Matrix2D
   var ensembleMatrix: Matrix2D
   var outcomes: (home: Double, draw: Double, away: Double)
   var components: [Double]

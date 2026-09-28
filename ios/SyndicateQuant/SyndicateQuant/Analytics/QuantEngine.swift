@@ -220,8 +220,15 @@ struct QuantEngine {
       let sharp = sharpGuard(qs, median: median)
       let mss = marketSupportScore(quotes: qs, median: median)
 
+      // NO DATA -> NO NUMBER: market-specific sample gates happen before any probability is computed.
+      guard marketSample >= (q.market == "GOALS" ? thresholds.goalsMinSample :
+                              q.market == "CORNERS" ? thresholds.cornersMinSample :
+                              thresholds.cardsMinSample) else {
+        continue
+      }
       let p: Double
       let modelName: String
+      var modelVote: Int? = nil
       if q.market == "GOALS" {
         let analytic = totalProbabilityFromDistribution(q, dist: totalDist)
         let line = q.line ?? 0.5
@@ -232,6 +239,15 @@ struct QuantEngine {
         if seed == 0 { seed = 42 }
         let mc = QuantMath.monteCarloTotal(matchModel.ensembleMatrix, line: line, n: 20_000, seed: seed, over: !isUnder)
         p = 0.95 * analytic + 0.05 * mc
+        let componentMatrices = [
+          matchModel.dcMatrix, matchModel.bivMatrix, matchModel.nbMatrix, matchModel.ensembleMatrix
+        ]
+        let votes = componentMatrices.reduce(0) { acc, matrix in
+          let componentP = totalProbabilityFromDistribution(q, dist: QuantMath.totalDistribution(matrix))
+          let edge = QuantMath.ev(p: componentP, odds: q.odds)
+          return acc + (edge > 0 ? 1 : 0)
+        }
+        modelVote = votes
         modelName = "ENSEMBLE(DC/BIV/NB)+MC"
       } else if q.market == "CARDS" {
         p = cardsProbability(q: q,
@@ -264,7 +280,7 @@ struct QuantEngine {
         posteriorBuckets: effectiveBuckets,
         posteriorWeight: posteriorWeight,
         thresholds: thresholds,
-        modelVote: nil) {
+        modelVote: modelVote) {
 
         if hImpact < 0.999 || aImpact < 0.999 {
           s.playerImpactHome = hImpact; s.playerImpactAway = aImpact
@@ -499,6 +515,7 @@ struct QuantEngine {
     return MatchModel(
       lh: final.0, la: final.1, baseLH: base.0, baseLA: base.1,
       baseMatrix: dcMatrix, playerMatrix: dcMatrix, matrix: primaryMatrix,
+      dcMatrix: dcMatrix, bivMatrix: bivarMatrix, nbMatrix: nbMatrix,
       ensembleMatrix: ensembleMatrix,
       outcomes: (ensembleHome, ensembleDraw, ensembleAway),
       components: [oDC.home, oDC.draw, oDC.away, ensembleHome, ensembleDraw, ensembleAway],
@@ -549,8 +566,8 @@ struct QuantEngine {
     thresholds: SignalThresholds,
     modelVote: Int? = nil
   ) -> BetSignal? {
-    let pRaw = p
-    var pFinal = p
+    let pRaw = min(0.999, max(0.001, p))
+    var pFinal = pRaw
     var appliedWeight: Double = 0
     var posteriorSource: String? = nil
     if !posteriorBuckets.isEmpty {
@@ -559,7 +576,7 @@ struct QuantEngine {
         let b = posteriorBuckets[idx]
         if b.n >= Self.posteriorMinN {
           let w = max(0, min(0.5, posteriorWeight))
-          pFinal = (1 - w) * p + w * b.factHitRate
+          pFinal = (1 - w) * pRaw + w * min(0.999, max(0.001, b.factHitRate))
           appliedWeight = w
           posteriorSource = String(format: "P %.0f–%.0f%% · n=%d",
             b.probabilityLow * 100, b.probabilityHigh * 100, b.n)
@@ -567,6 +584,7 @@ struct QuantEngine {
       }
     }
 
+    pFinal = min(0.999, max(0.001, pFinal))
     let quoteProbs = quotes.map { 1.0 / max($0.odds, 1.01) }
     let marketProbability = QuantMath.median(quoteProbs) ?? 0.0
     let marketMAD = QuantMath.mad(quoteProbs.map { $0 * 100 }) ?? 0.0

@@ -6,6 +6,7 @@ import SwiftData
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate {
   nonisolated static let refreshID = "com.syndicatequant.app.refresh"
+  nonisolated static let forecastID = "com.syndicatequant.app.forecast"
   nonisolated static let processingID = "com.syndicatequant.app.processing"
   // [BGTask] Ночное обогащение
   nonisolated static let enrichID = "com.syndicatequant.app.enrich"
@@ -23,6 +24,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return
       }
       AppDelegate.handle(refreshTask)
+    }
+
+    BGTaskScheduler.shared.register(
+      forTaskWithIdentifier: Self.forecastID,
+      using: nil
+    ) { task in
+      guard let forecastTask = task as? BGAppRefreshTask else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      AppDelegate.handleForecast(forecastTask)
     }
 
     BGTaskScheduler.shared.register(
@@ -52,6 +64,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     NotificationService.request()
     Self.scheduleNextRefresh()
+    Self.scheduleNextForecast()
     Self.scheduleWeeklyProcessing()
     Self.scheduleNextEnrich()
     return true
@@ -59,10 +72,41 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
   func applicationDidEnterBackground(_ application: UIApplication) {
     Self.scheduleNextRefresh()
+    Self.scheduleNextForecast()
     Self.scheduleNextEnrich()
   }
 
   // MARK: - BGAppRefreshTask (Волна A)
+
+  nonisolated private static func handleForecast(_ task: BGAppRefreshTask) {
+    scheduleNextForecast()
+    let work = Task { @MainActor in
+      let result = await ScanCoordinator.shared.scan(settings: nil, selectedLeague: "Все")
+      task.setTaskCompleted(success: result.success)
+    }
+    task.expirationHandler = { work.cancel() }
+  }
+
+  nonisolated private static func scheduleNextForecast() {
+    let request = BGAppRefreshTaskRequest(identifier: forecastID)
+    request.earliestBeginDate = nextForecastWindow()
+    do {
+      try BGTaskScheduler.shared.submit(request)
+    } catch {
+      print("[BG] forecast submit failed: \(error.localizedDescription)")
+    }
+  }
+
+  nonisolated private static func nextForecastWindow() -> Date {
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = TimeZone.current
+    let now = Date()
+    var comps = cal.dateComponents([.year, .month, .day], from: now)
+    comps.hour = 10; comps.minute = 55; comps.second = 0
+    if let today = cal.date(from: comps), today > now { return today }
+    comps.day = (comps.day ?? 1) + 1
+    return cal.date(from: comps) ?? now.addingTimeInterval(24 * 3600)
+  }
 
   nonisolated private static func handle(_ task: BGAppRefreshTask) {
     scheduleNextRefresh()

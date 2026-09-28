@@ -57,7 +57,7 @@ import Foundation
   }
 
   let baseURL = "https://api.sstats.net"
-  let engineVersion = "v6.0.0-iOS-OVERBET"
+  let engineVersion = "v6.2.0-iOS-OVERBET"
 
   init() {
     apiKey = KeychainStore.shared.get("sstats_api_key") ?? ""

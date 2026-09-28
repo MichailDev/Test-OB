@@ -210,10 +210,11 @@ final class BacktestService {
     }
 
     for m in allMatches {
-      _ = HistoricalMarketCacheService.upsert(from: m, in: context)
+      _ = HistoricalMarketCacheService.upsert(from: m)
     }
+    HistoricalMarketCacheService.flush()
     try? context.save()
-    let cacheSeed = HistoricalMarketCacheService.progress(in: context)
+    let cacheSeed = HistoricalMarketCacheService.progress()
     snapshot.historicalCacheCount = cacheSeed.total
     snapshot.enrichmentTotal = cacheSeed.total
     snapshot.enrichmentProgress = cacheSeed.enriched
@@ -258,10 +259,9 @@ final class BacktestService {
     // ── Фаза 3: Corners/Cards (resume-safe)
     let needCC: [Int] = allMatchesMut.enumerated().compactMap { (idx, m) -> Int? in
       guard m.numericID != nil else { return nil }
-      let gid = m.id
-      let d = FetchDescriptor<HistoricalMarketCache>(
-        predicate: #Predicate { $0.gameID == gid })
-      guard let row = try? context.fetch(d).first else { return idx }
+      guard let row = HistoricalMarketCacheService.record(gameID: m.id) else {
+        return idx
+      }
       if row.cornersChecked && row.cardsChecked { return nil }
       if row.failedAttempts >= 3 { return nil }
       return idx
@@ -280,7 +280,7 @@ final class BacktestService {
         do {
           let books = try await client.fullOdds(gameId: nid)
           guard !books.isEmpty else {
-            HistoricalMarketCacheService.markFailed(gameID: mm.id, error: "Пустой ответ /Odds", in: context)
+            HistoricalMarketCacheService.markFailed(gameID: mm.id, error: "Пустой ответ /Odds")
             continue
           }
           let extra = Self.oddsJSONFromBookmakers(books)
@@ -293,12 +293,12 @@ final class BacktestService {
           let hasC = extra.contains { $0.object?["marketId"]?.number == Double(MarketID.totalCorners) }
           let hasK = extra.contains { $0.object?["marketId"]?.number == Double(MarketID.totalCards) }
           if hasC || hasK {
-            HistoricalMarketCacheService.markEnriched(gameID: mm.id, oddsData: encoded, hasCorners: hasC, hasCards: hasK, in: context)
+            HistoricalMarketCacheService.markEnriched(gameID: mm.id, oddsData: encoded, hasCorners: hasC, hasCards: hasK)
           } else {
-            HistoricalMarketCacheService.markFailed(gameID: mm.id, error: "Нет market 45/80 в /Odds", in: context)
+            HistoricalMarketCacheService.markFailed(gameID: mm.id, error: "Нет market 45/80 в /Odds")
           }
         } catch {
-          HistoricalMarketCacheService.markFailed(gameID: mm.id, error: error.localizedDescription, in: context)
+          HistoricalMarketCacheService.markFailed(gameID: mm.id, error: error.localizedDescription)
         }
       }
       if i % 25 == 0 {
@@ -317,7 +317,7 @@ final class BacktestService {
                         cursor: cursor, fromDate: fromDate, toDate: toDate,
                         matches: allMatchesMut, histories: allHistories)
 
-    let cacheAfter = HistoricalMarketCacheService.progress(in: context)
+    let cacheAfter = HistoricalMarketCacheService.progress()
     snapshot.historicalCacheCount = cacheAfter.total
     snapshot.enrichmentTotal = cacheAfter.total
     snapshot.enrichmentProgress = cacheAfter.enriched
@@ -434,7 +434,7 @@ final class BacktestService {
 
     let client = SStatsClient(settings: settings)
 
-    let (enrichedBefore, total) = HistoricalMarketCacheService.progress(in: context)
+    let (enrichedBefore, total) = HistoricalMarketCacheService.progress()
     snapshot.enrichmentProgress = enrichedBefore
     snapshot.enrichmentTotal = total
     snapshot.historicalCacheCount = total
@@ -449,7 +449,7 @@ final class BacktestService {
       return
     }
 
-    let candidates = HistoricalMarketCacheService.candidates(limit: chunkSize, in: context)
+    let candidates = HistoricalMarketCacheService.candidates(limit: chunkSize)
     guard !candidates.isEmpty else {
       progress(enrichedBefore, total, "Нет кандидатов (failedAttempts ≥ 3?)")
       return
@@ -461,13 +461,13 @@ final class BacktestService {
         let books = try await client.fullOdds(gameId: row.numericID)
         if books.isEmpty {
           HistoricalMarketCacheService.markFailed(
-            gameID: row.gameID, error: "Пустой ответ /Odds", in: context)
+            gameID: row.gameID, error: "Пустой ответ /Odds")
           continue
         }
         let markets = Self.oddsJSONFromBookmakers(books)
         if markets.isEmpty {
           HistoricalMarketCacheService.markFailed(
-            gameID: row.gameID, error: "Нет market 45/80", in: context)
+            gameID: row.gameID, error: "Нет market 45/80")
           continue
         }
         let data = try JSONEncoder().encode(markets)
@@ -475,22 +475,22 @@ final class BacktestService {
         let hasK = markets.contains { $0.object?["marketId"]?.number == Double(MarketID.totalCards) }
         HistoricalMarketCacheService.markEnriched(
           gameID: row.gameID, oddsData: data,
-          hasCorners: hasC, hasCards: hasK, in: context)
+          hasCorners: hasC, hasCards: hasK)
         newlyEnriched += 1
       } catch {
         HistoricalMarketCacheService.markFailed(
-          gameID: row.gameID, error: error.localizedDescription, in: context)
+          gameID: row.gameID, error: error.localizedDescription)
       }
       try? context.save()
 
       if i % 5 == 0 {
-        let (e, t) = HistoricalMarketCacheService.progress(in: context)
+        let (e, t) = HistoricalMarketCacheService.progress()
         progress(e, t, "Обогащено \(e)/\(t)")
       }
       try? await Task.sleep(for: .milliseconds(400))
     }
 
-    let (finalE, finalT) = HistoricalMarketCacheService.progress(in: context)
+    let (finalE, finalT) = HistoricalMarketCacheService.progress()
     snapshot.enrichmentProgress = finalE
     snapshot.enrichmentTotal = finalT
     snapshot.historicalCacheCount = finalT
@@ -645,7 +645,7 @@ final class BacktestService {
     var prepared: [Match] = []
     for m in newMatches {
       var mm = m
-      if mm.numericID != nil { _ = HistoricalMarketCacheService.upsert(from: mm, in: context) }
+      if mm.numericID != nil { _ = HistoricalMarketCacheService.upsert(from: mm) }
       if let nid = mm.numericID, let o = try? await client.odds(numericID: nid, fresh: true) {
         let data = o.object?["data"]?.object ?? o.object ?? [:]
         let game = data["game"]?.object ?? data
@@ -657,7 +657,7 @@ final class BacktestService {
         do {
           let books = try await client.fullOdds(gameId: nid)
           guard !books.isEmpty else {
-            HistoricalMarketCacheService.markFailed(gameID: mm.id, error: "Пустой ответ /Odds", in: context); continue
+            HistoricalMarketCacheService.markFailed(gameID: mm.id, error: "Пустой ответ /Odds"); continue
           }
           let extra = Self.oddsJSONFromBookmakers(books)
           mm.oddsJSON = .array((mm.oddsJSON?.array ?? []) + extra)
@@ -665,17 +665,19 @@ final class BacktestService {
           let hasC = extra.contains { $0.object?["marketId"]?.number == Double(MarketID.totalCorners) }
           let hasK = extra.contains { $0.object?["marketId"]?.number == Double(MarketID.totalCards) }
           if hasC || hasK {
-            HistoricalMarketCacheService.markEnriched(gameID: mm.id, oddsData: encoded, hasCorners: hasC, hasCards: hasK, in: context)
+            HistoricalMarketCacheService.markEnriched(gameID: mm.id, oddsData: encoded, hasCorners: hasC, hasCards: hasK)
           } else {
-            HistoricalMarketCacheService.markFailed(gameID: mm.id, error: "Нет market 45/80 в /Odds", in: context)
+            HistoricalMarketCacheService.markFailed(gameID: mm.id, error: "Нет market 45/80 в /Odds")
           }
         } catch {
-          HistoricalMarketCacheService.markFailed(gameID: mm.id, error: error.localizedDescription, in: context)
+          HistoricalMarketCacheService.markFailed(gameID: mm.id, error: error.localizedDescription)
         }
       }
       if mm.oddsJSON?.array?.isEmpty == false { prepared.append(mm) }
       try? await Task.sleep(for: .milliseconds(400))
     }
+
+    HistoricalMarketCacheService.flush()
 
     guard !prepared.isEmpty else {
       snapshot.toDate = toDate
