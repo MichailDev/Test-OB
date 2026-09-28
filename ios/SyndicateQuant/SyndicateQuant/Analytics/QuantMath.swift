@@ -189,7 +189,6 @@ enum QuantMath {
       for j in 0...maxGoals {
         var p = 0.0
         for k in 0...min(i, j) {
-          let kd = Double(k)
           p += poissonPMF(k, lc)
               * poissonPMF(i - k, l1)
               * poissonPMF(j - k, l2)

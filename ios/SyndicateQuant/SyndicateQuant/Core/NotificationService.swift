@@ -1,13 +1,17 @@
 import Foundation
 import UserNotifications
 
+extension Notification.Name {
+  static let openSignal = Notification.Name("OverBet.openSignal")
+}
+
 enum NotificationService {
   static let categorySignal = "SQ_SIGNAL"
 
   static func request() {
     Task {
       let center = UNUserNotificationCenter.current()
-      try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+      _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
 
       // Категория с action-button "Открыть"
       let openAction = UNNotificationAction(
