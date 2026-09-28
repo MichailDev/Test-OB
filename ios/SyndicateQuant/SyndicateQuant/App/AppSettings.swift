@@ -14,6 +14,9 @@ import Foundation
   @Published var historyMatches: Int {
     didSet { UserDefaults.standard.set(historyMatches, forKey: "history_matches") }
   }
+  @Published var scanMatches: Int {
+    didSet { UserDefaults.standard.set(scanMatches, forKey: "scan_matches") }
+  }
   @Published var notifyBets: Bool {
     didSet { UserDefaults.standard.set(notifyBets, forKey: "notify_bets") }
   }
@@ -64,6 +67,7 @@ import Foundation
     autoRefresh = UserDefaults.standard.object(forKey: "auto_refresh") as? Bool ?? true
     refreshMinutes = UserDefaults.standard.object(forKey: "refresh_minutes") as? Int ?? 30
     historyMatches = UserDefaults.standard.object(forKey: "history_matches") as? Int ?? 15
+    scanMatches = UserDefaults.standard.object(forKey: "scan_matches") as? Int ?? 15
     notifyBets = UserDefaults.standard.object(forKey: "notify_bets") as? Bool ?? true
 
     oddsFormatRaw = UserDefaults.standard.string(forKey: "odds_format") ?? "eu"
