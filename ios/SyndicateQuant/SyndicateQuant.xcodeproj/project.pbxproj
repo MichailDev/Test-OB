@@ -21,8 +21,9 @@
     A9C9F08A0E994060CE95AFA9 = {isa = PBXGroup; children = (523E30BB8241B81070E65F38,968EEC5D13DD1C42D1584AF6); name = "Journal"; path = "Journal"; sourceTree = "<group>";};
     E6374F5CFEAAA789418F8489 = {isa = PBXGroup; children = (FDC7C3D488D335B7069073FC); name = "Settings"; path = "Settings"; sourceTree = "<group>";};
     B9EF26B53D3A424039A1AC50 = {isa = PBXGroup; children = (70586B9718F2F8EFE0E0EB3A); name = "Statistics"; path = "Statistics"; sourceTree = "<group>";};
-    3978A9B11F0521FA1130CA27 = {isa = PBXGroup; children = (279400FEEE84FAF19D86B6BA,4CBEABA4EF0C568A1D5C9C11,5B5CD95BC9742EF88C543BE3,732D4E72D1F06A07225D2F55,7D710A38FFC10F460762FF17,7E2B98EC38B2780197E67987,A21586B4F7EDF5B1EED87772,DEAE9D0ABBF1DBA24DE0147A,F99F42F916CB3E5D9FD21A7B,FC75AF25089BFE1F29388FBC); path = "SyndicateQuant"; sourceTree = "<group>";};
+    3978A9B11F0521FA1130CA27 = {isa = PBXGroup; children = (4CBEABA4EF0C568A1D5C9C11,0A7A9D3E5B1F4C2896D0E7A1); sourceTree = "<group>";};
     4CBEABA4EF0C568A1D5C9C11 = {isa = PBXGroup; children = (91FBCD5331B1A9693FB8442D); name = Products; sourceTree = "<group>";};
+    0A7A9D3E5B1F4C2896D0E7A1 = {isa = PBXGroup; children = (279400FEEE84FAF19D86B6BA,5B5CD95BC9742EF88C543BE3,732D4E72D1F06A07225D2F55,7D710A38FFC10F460762FF17,7E2B98EC38B2780197E67987,A21586B4F7EDF5B1EED87772,DEAE9D0ABBF1DBA24DE0147A,F99F42F916CB3E5D9FD21A7B,FC75AF25089BFE1F29388FBC,46FAD396C80C944CCF6186D9); name = "SyndicateQuant"; path = "SyndicateQuant"; sourceTree = "<group>";};
     91FBCD5331B1A9693FB8442D = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SyndicateQuant.app; sourceTree = BUILT_PRODUCTS_DIR;};
     35F6D6D45531999C7E9C774C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BacktestEngine.swift"; sourceTree = "<group>";};
     6A7BAAAC3B4BDE129519EE7A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MetricsModels.swift"; sourceTree = "<group>";};
