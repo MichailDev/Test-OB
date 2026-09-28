@@ -40,7 +40,7 @@ struct StatisticsView: View {
   }
 
   private func metric(_ title: String, _ value: String) -> some View {
-    HStack { Text(title); Spacer(); Text(value).font(.monospacedDigit()) }
+    HStack { Text(title); Spacer(); Text(value).font(.body.monospacedDigit()) }
   }
 }
 

@@ -107,7 +107,7 @@ struct SettingsView: View {
   private func purchase() async {
     let result = await subscription.purchaseSBet()
     switch result {
-    case .purchased:
+    case .purchased, .restored:
       return
     case .cancelled:
       return

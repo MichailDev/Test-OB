@@ -2,7 +2,7 @@ import Foundation
 import UserNotifications
 
 extension Notification.Name {
-  static let openSignal = Notification.Name("OverBet.openSignal")
+  static let openSignal = Notification.Name("openSignal")
 }
 
 enum NotificationService {
