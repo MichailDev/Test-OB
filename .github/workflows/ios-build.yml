@@ -31,10 +31,11 @@ jobs:
           SCHEMA=ios/SyndicateQuant/SyndicateQuant/Persistence/AppSchema.swift
           MIGRATION=ios/SyndicateQuant/SyndicateQuant/Persistence/AppMigrationPlan.swift
           CACHE=ios/SyndicateQuant/SyndicateQuant/Services/HistoricalMarketCacheService.swift
-          grep -q 'Schema.Version(6, 0, 1)' "$SCHEMA"
+          grep -q 'Schema.Version(6, 2, 0)' "$SCHEMA"
           grep -q 'AppSchemaV0.self' "$MIGRATION"
           grep -q 'AppSchemaV1.self' "$MIGRATION"
           grep -q 'AppSchemaV2.self' "$MIGRATION"
+          grep -q 'AppSchemaV4.self' "$MIGRATION"
           grep -q '\.custom(' "$MIGRATION"
           ! grep -q 'HistoricalMarketCache.self' "$SCHEMA"
           ! grep -q 'import SwiftData' "$CACHE"
